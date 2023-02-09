@@ -1,23 +1,23 @@
 import pygame
 import numpy as np
 from typing import Tuple, List
+from random import random
+from vector import *
 
 LINE_SKIP = 10
+MAX_DEPTH = 10
 
-ASPECT_RATIO = 1/1
-# ASPECT_RATIO = 16/9
+# ASPECT_RATIO = 1/1
+ASPECT_RATIO = 16/9
 
-WIDTH  = 800
+WIDTH  = 400
 HEIGHT = int(WIDTH / ASPECT_RATIO)
 
-VIEWPORT_HEIGHT = 2
-VIEWPORT_WIDTH = VIEWPORT_HEIGHT * ASPECT_RATIO
-FOCAL_LENGHT = 1
+SAMPLES_PER_PIXEL = 25;
 
 ORIGIN = np.array([0,0,0])
-HORIZONTAL = np.array([VIEWPORT_WIDTH, 0, 0])
-VERTICAL = np.array([0, VIEWPORT_HEIGHT, 0])
-LOWER_LEFT_CORNER = ORIGIN - HORIZONTAL/2 - VERTICAL/2 - np.array([0, 0, FOCAL_LENGHT])
+
+
 
 
 class Ray:
@@ -118,15 +118,48 @@ class HittableList(Hittable):
         return rec
 
 
-def ray_color(ray: Ray, world: Hittable) -> np.ndarray:
+class Camera:
+    def __init__(self, aspectRatio: float) -> None:
+        self.viewportHeight = 2
+        self.viewportWidth = self.viewportHeight * aspectRatio
+        self.focalLenght = 1
+
+        self._origin = np.array([0,0,0])
+        self._horizontal = np.array([self.viewportWidth, 0, 0])
+        self._vertical = np.array([0, self.viewportHeight, 0])
+        self._lowerLeftCorner = self._origin - self._horizontal/2 - self._vertical/2 - np.array([0, 0, self.focalLenght])
+
+    def getRay(self, u: float, v: float) -> Ray:
+        return Ray(self._origin, self._lowerLeftCorner + u*self._horizontal + v*self._vertical - self._origin)
+
+
+def rayColor(ray: Ray, world: Hittable, depth: int) -> np.ndarray:
+    if depth <= 0:
+        return newVector(0,0,0)
+
     rec = world.hit(ray, 0, np.Infinity)
     if rec.hit :
-        return 0.5 * (rec.normal + np.array([1,1,1]))
+        target = rec.p + rec.normal + randomVectorInUnitSphere()
+        return 0.5 * rayColor(Ray(rec.p, target - rec.p), world, depth -1)
 
     unit_direction = ray.direction / np.linalg.norm(ray.direction)
     t = 0.5 * (unit_direction[1] + 1)
     color = (1 - t)*np.array([1,1,1]) + t*np.array([0.5, 0.7, 1])
     return color
+
+
+def correctColor(color: np.ndarray) -> np.ndarray:
+    r = color[0]
+    g = color[1]
+    b = color[2]
+
+    scale = 1 / SAMPLES_PER_PIXEL
+
+    r = np.clip(np.sqrt(r * scale),0,0.999)
+    g = np.clip(np.sqrt(g * scale),0,0.999)
+    b = np.clip(np.sqrt(b * scale),0,0.999)
+
+    return np.array([r, g ,b])
 
 
 def main():
@@ -136,25 +169,30 @@ def main():
 
     pygame.display.set_caption("Raytracing")
 
+    cam = Camera(ASPECT_RATIO)
+
     world = HittableList()
 
     world.append(Sphere(np.array([0, 0, -1]), 0.5))
     world.append(Sphere(np.array([0, -100.5, -1]), 100))
-    world.append(Sphere(np.array([1, 0, -2]), 0.7))
+    # world.append(Sphere(np.array([1, 0, -2]), 0.7))
     
     screen.fill((0,0,0))
     for y in range(HEIGHT):
         for x in range(WIDTH):
 
-            # Do the drawing here
-            u = x/(WIDTH-1)
-            v = y/(HEIGHT-1)
+            pixelColor = np.array([0,0,0], dtype=float)
+            for _ in range(SAMPLES_PER_PIXEL) :
+                u = (x + random())/(WIDTH-1)
+                v = (y + random())/(HEIGHT-1)
 
-            r = Ray(ORIGIN, LOWER_LEFT_CORNER + u*HORIZONTAL + v*VERTICAL - ORIGIN)
-            pixel_color = ray_color(r, world)
+                r = cam.getRay(u, v)
+                pixelColor += rayColor(r, world, MAX_DEPTH)
+
+            pixelColor = correctColor(pixelColor)
 
             # TODO: Potentially flip the axis
-            screen.set_at((WIDTH-x, HEIGHT-y), (pixel_color*255).tolist())
+            screen.set_at((WIDTH-x, HEIGHT-y), (pixelColor*255).tolist())
 
         if y % LINE_SKIP == 0 :
             pygame.display.flip()
