@@ -2,7 +2,7 @@ import pygame
 import numpy as np
 from typing import Tuple, List
 
-LINE_SKIP = 1
+LINE_SKIP = 10
 
 ASPECT_RATIO = 1/1
 # ASPECT_RATIO = 16/9
@@ -140,6 +140,7 @@ def main():
 
     world.append(Sphere(np.array([0, 0, -1]), 0.5))
     world.append(Sphere(np.array([0, -100.5, -1]), 100))
+    world.append(Sphere(np.array([1, 0, -2]), 0.7))
     
     screen.fill((0,0,0))
     for y in range(HEIGHT):
