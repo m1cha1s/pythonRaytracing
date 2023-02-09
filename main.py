@@ -1,10 +1,14 @@
 import pygame
 import numpy as np
+from typing import Tuple, List
+
+LINE_SKIP = 1
 
 ASPECT_RATIO = 1/1
+# ASPECT_RATIO = 16/9
 
-WIDTH  = 200
-HEIGHT = int(WIDTH * ASPECT_RATIO)
+WIDTH  = 800
+HEIGHT = int(WIDTH / ASPECT_RATIO)
 
 VIEWPORT_HEIGHT = 2
 VIEWPORT_WIDTH = VIEWPORT_HEIGHT * ASPECT_RATIO
@@ -24,38 +28,105 @@ class Ray:
     def at(self, t: float) -> np.ndarray:
         return self.origin + t*self.direction
 
+
 class HitRecord:
-    def __init__(self, p: np.ndarray, normal: np.ndarray, t: float) -> None:
+    def __init__(self, p: np.ndarray = np.array([0,0,0]), normal: np.ndarray = np.array([1,1,1]), t: float = 0, hit: bool = False, frontFace:bool = True) -> None:
         self.p = p
         self.normal = normal
         self.t = t 
+        self.hit = hit
+        self.frontFace = frontFace
+
+
+    def setFaceNormal(self, r: Ray, outwardNormal: np.ndarray) -> None:
+        self.frontFace = r.direction.dot(outwardNormal) < 0
+        
+        if self.frontFace:
+            self.normal = outwardNormal
+        else:
+            self.normal = outwardNormal * -1
+
 
 class Hittable:
-    def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
+    def __init__(self) -> None:
         pass
 
-def hit_sphere(center: np.ndarray, radius: float, r: Ray) -> float:
-    oc = r.origin - center
-    a = np.dot(r.direction, r.direction)
-    b = 2 * np.dot(oc, r.direction)
-    c = np.dot(oc, oc) - radius*radius
-    discriminant = b*b - 4*a*c
-    if discriminant < 0:
-        return -1
-    else:
-        return (-b - np.sqrt(discriminant)) / (2*a)
+    def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
+        return HitRecord()
 
 
-def ray_color(ray: Ray):
-    t = hit_sphere(np.array([0,0,-1]), 0.5, ray)
+class Sphere(Hittable):
+    def __init__(self, center: np.ndarray, radius: float) -> None:
+        super().__init__()
 
-    if t > 0:
-        N = ray.direction / np.linalg.norm(ray.direction)
-        return 0.5*np.array([N[0]+1, N[1]+1, N[2]+1])
+        self.center = center
+        self.radius = radius
+
+    def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
+        oc = r.origin - self.center
+        a = r.direction.dot(r.direction)
+        half_b = oc.dot(r.direction)
+        c = oc.dot(oc) - self.radius*self.radius
+        discriminant = half_b*half_b - a*c
+
+        if discriminant < 0:
+            return HitRecord()
+
+        sqrtd = np.sqrt(discriminant)
+
+        root = (-half_b - sqrtd) / a
+
+        if (root < t_min) or (t_max < root):
+            root = (-half_b + sqrtd) / a
+
+            if (root < t_min) or (t_max < root):
+                return HitRecord()
+
+        rec = HitRecord(r.at(root), (r.at(root) - self.center) / self.radius, root, True)
+
+        
+
+        outwardNormal = (r.at(root) - self.center) / self.radius
+
+        rec.setFaceNormal(r, outwardNormal)
+
+
+        return rec
+
+
+class HittableList(Hittable):
+    def __init__(self) -> None:
+        super().__init__()
+        self.objects: List[Hittable] = []
+
+    def append(self, object: Hittable) -> None:
+        self.objects.append(object)
+
+    def clear(self) -> None:
+        self.objects.clear()
+
+    def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
+        closestSoFar = t_max
+
+        rec = HitRecord()
+        for object in self.objects:
+            tmp_rec = object.hit(r, t_min, closestSoFar)
+            if tmp_rec.hit :
+                closestSoFar = tmp_rec.t
+                rec = tmp_rec
+
+        return rec
+
+
+def ray_color(ray: Ray, world: Hittable) -> np.ndarray:
+    rec = world.hit(ray, 0, np.Infinity)
+    if rec.hit :
+        return 0.5 * (rec.normal + np.array([1,1,1]))
 
     unit_direction = ray.direction / np.linalg.norm(ray.direction)
     t = 0.5 * (unit_direction[1] + 1)
-    return (1 - t)*np.array([1,1,1]) + t*np.array([0.5, 0.7, 1])
+    color = (1 - t)*np.array([1,1,1]) + t*np.array([0.5, 0.7, 1])
+    return color
 
 
 def main():
@@ -65,6 +136,10 @@ def main():
 
     pygame.display.set_caption("Raytracing")
 
+    world = HittableList()
+
+    world.append(Sphere(np.array([0, 0, -1]), 0.5))
+    world.append(Sphere(np.array([0, -100.5, -1]), 100))
     
     screen.fill((0,0,0))
     for y in range(HEIGHT):
@@ -75,13 +150,12 @@ def main():
             v = y/(HEIGHT-1)
 
             r = Ray(ORIGIN, LOWER_LEFT_CORNER + u*HORIZONTAL + v*VERTICAL - ORIGIN)
-            pixel_color = ray_color(r)
-            # print(pixel_color)
+            pixel_color = ray_color(r, world)
 
             # TODO: Potentially flip the axis
-            screen.set_at((WIDTH-x, HEIGHT-y), pixel_color*255)
+            screen.set_at((WIDTH-x, HEIGHT-y), (pixel_color*255).tolist())
 
-
+        if y % LINE_SKIP == 0 :
             pygame.display.flip()
 
     running = True
