@@ -50,7 +50,7 @@ class Hittable:
         pass
 
     def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
-        return HitRecord()
+        raise NotImplemented
 
 
 class Sphere(Hittable):
@@ -60,13 +60,7 @@ class Sphere(Hittable):
         self.center = center
         self.radius = radius
 
-    def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
-        oc = r.origin - self.center
-        a = r.direction.dot(r.direction)
-        half_b = oc.dot(r.direction)
-        c = oc.dot(oc) - self.radius * self.radius
-        discriminant = half_b * half_b - a * c
-
+    def _process_discrimninant(self, r, a, half_b, t_min: float, t_max: float, discriminant: float) -> HitRecord:
         if discriminant < 0:
             return HitRecord()
 
@@ -87,6 +81,18 @@ class Sphere(Hittable):
         rec.set_face_normal(r, outward_normal)
 
         return rec
+
+    def hit(self, r: Ray, t_min: float, t_max: float) -> List[HitRecord]:
+        oc = r.origin - self.center
+        # a = r.direction.dot(r.direction)
+        a = np.apply_along_axis(lambda x: x.dot(x), axis=1, arr=r.direction)
+        half_b = np.apply_along_axis(lambda x: oc.dot(x), axis=1, arr=r.direction)
+        c = oc.dot(oc) - self.radius * self.radius
+        discriminant = half_b * half_b - a * c
+
+        vpd = np.vectorize(self._process_discrimninant)
+
+        return vpd(r, a, half_b, t_min, t_max, discriminant)
 
 
 class HittableList(Hittable):
@@ -125,7 +131,7 @@ class Camera:
         self._lowerLeftCorner = self._origin - self._horizontal / 2 - self._vertical / 2 - np.array(
             [0, 0, self.focalLength])
 
-    def get_ray(self, u: float, v: float) -> Ray:
+    def get_ray(self, u: np.ndarray, v: np.ndarray) -> Ray:
         return Ray(self._origin, self._lowerLeftCorner + u * self._horizontal + v * self._vertical - self._origin)
 
 
@@ -174,24 +180,29 @@ def main():
 
     world.append(Sphere(np.array([0, 0, -1]), 0.5))
     world.append(Sphere(np.array([0, -100.5, -1]), 100))
-    # world.append(Sphere(np.array([1, 0, -2]), 0.7))
+    world.append(Sphere(np.array([1, 0, -2]), 0.7))
 
     screen.fill((0, 0, 0))
     pygame.display.flip()
 
     for pixel in xy(WIDTH, HEIGHT):
         pixel_color = np.array([0, 0, 0], dtype=float)
+        us = []
+        vs = []
         for _ in range(SAMPLES_PER_PIXEL):
-            pixel_uv = uv(*pixel, WIDTH, HEIGHT)
-            r = cam.get_ray(*pixel_uv)
+            u, v = uv(*pixel, WIDTH, HEIGHT)
+            us.append([u])
+            vs.append([v])
 
-            pixel_color += ray_color(r, world, MAX_DEPTH)
-        pixel_color = correct_color(pixel_color)
+    r = cam.get_ray(np.array(us), np.array(vs))
 
-        screen.set_at((WIDTH - pixel[0], HEIGHT - pixel[1]), (pixel_color * 255).tolist())
+    pixel_color += ray_color(r, world, MAX_DEPTH)
+    pixel_color = correct_color(pixel_color)
 
-        if pixel[1] % LINE_SKIP == 0:
-            pygame.display.flip()
+    screen.set_at((WIDTH - pixel[0], HEIGHT - pixel[1]), (pixel_color * 255).tolist())
+
+    if pixel[1] % LINE_SKIP == 0:
+        pygame.display.flip()
 
     running = True
     while running:
