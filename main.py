@@ -1,12 +1,11 @@
 import numpy as np
 from random import random
-from typing import List
+from typing import List, Tuple
 from vector import *
 import pygame
 
-
 LINE_SKIP = 10
-MAX_DEPTH = 10
+MAX_DEPTH = 3
 
 # ASPECT_RATIO = 1/1
 ASPECT_RATIO = 16 / 9
@@ -14,7 +13,7 @@ ASPECT_RATIO = 16 / 9
 WIDTH = 400
 HEIGHT = int(WIDTH / ASPECT_RATIO)
 
-SAMPLES_PER_PIXEL = 25
+SAMPLES_PER_PIXEL = 10
 
 ORIGIN = np.array([0, 0, 0])
 
@@ -137,33 +136,36 @@ def ray_color(ray: Ray, world: Hittable, depth: int) -> np.ndarray:
     rec = world.hit(ray, 0, np.Infinity)
     if rec.hit:
         target = rec.p + rec.normal + randomVectorInUnitSphere()
-        return 0.5 * ray_color(Ray(rec.p, target - rec.p), world, depth - 1)
+        return ray_color(Ray(rec.p, target - rec.p), world, depth - 1) * 0.5
 
     unit_direction = ray.direction / np.linalg.norm(ray.direction)
     t = 0.5 * (unit_direction[1] + 1)
-    color = (1 - t) * np.array([1, 1, 1]) + t * np.array([0.5, 0.7, 1])
+    color = (1 - t) * np.array([1, 1, 1], dtype=float) + (t * np.array([0.5, 0.7, 1.0], dtype=float))
     return color
 
 
 def correct_color(color: np.ndarray) -> np.ndarray:
-    r = color[0]
-    g = color[1]
-    b = color[2]
-
     scale = 1 / SAMPLES_PER_PIXEL
+    color = np.clip(np.sqrt(color * scale), 0, 0.999)
+    return color
 
-    r = np.clip(np.sqrt(r * scale), 0, 0.999)
-    g = np.clip(np.sqrt(g * scale), 0, 0.999)
-    b = np.clip(np.sqrt(b * scale), 0, 0.999)
 
-    return np.array([r, g, b])
+def xy(width: int, height: int) -> Tuple[int, int]:
+    for y in range(height):
+        for x in range(width):
+            yield x, y
+
+
+def uv(x: int, y: int, width: int, height: int) -> Tuple[float, float]:
+    u = (x + random()) / (width - 1)
+    v = (y + random()) / (height - 1)
+    return u, v
 
 
 def main():
+    # Pygame stuff
     pygame.init()
-
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-
     pygame.display.set_caption("Raytracing")
 
     cam = Camera(ASPECT_RATIO)
@@ -175,23 +177,20 @@ def main():
     # world.append(Sphere(np.array([1, 0, -2]), 0.7))
 
     screen.fill((0, 0, 0))
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
+    pygame.display.flip()
 
-            pixel_color = np.array([0, 0, 0], dtype=float)
-            for _ in range(SAMPLES_PER_PIXEL):
-                u = (x + random()) / (WIDTH - 1)
-                v = (y + random()) / (HEIGHT - 1)
+    for pixel in xy(WIDTH, HEIGHT):
+        pixel_color = np.array([0, 0, 0], dtype=float)
+        for _ in range(SAMPLES_PER_PIXEL):
+            pixel_uv = uv(*pixel, WIDTH, HEIGHT)
+            r = cam.get_ray(*pixel_uv)
 
-                r = cam.get_ray(u, v)
-                pixel_color += ray_color(r, world, MAX_DEPTH)
+            pixel_color += ray_color(r, world, MAX_DEPTH)
+        pixel_color = correct_color(pixel_color)
 
-            pixel_color = correct_color(pixel_color)
+        screen.set_at((WIDTH - pixel[0], HEIGHT - pixel[1]), (pixel_color * 255).tolist())
 
-            # TODO: Potentially flip the axis
-            screen.set_at((WIDTH - x, HEIGHT - y), (pixel_color * 255).tolist())
-
-        if y % LINE_SKIP == 0:
+        if pixel[1] % LINE_SKIP == 0:
             pygame.display.flip()
 
     running = True
