@@ -49,7 +49,7 @@ class Hittable:
     def __init__(self) -> None:
         pass
 
-    def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
+    def hit(self, r: Ray, t_min: float, t_max: float) -> List[HitRecord]:
         raise NotImplemented
 
 
@@ -106,17 +106,19 @@ class HittableList(Hittable):
     def clear(self) -> None:
         self.objects.clear()
 
-    def hit(self, r: Ray, t_min: float, t_max: float) -> HitRecord:
-        closest_so_far = t_max
+    def hit(self, r: Ray, t_min: float, t_max: float) -> List[HitRecord]:
+        closest_so_far: List[float] = [t_max for _ in r.direction]
 
-        rec = HitRecord()
+        rec: List[HitRecord] = [HitRecord() for _ in r.direction]
         for obj in self.objects:
             tmp_rec = obj.hit(r, t_min, closest_so_far)
-            if tmp_rec.hit:
-                closest_so_far = tmp_rec.t
-                rec = tmp_rec
+            for idx, tmp_rec_hit in enumerate(tmp_rec):
+                if tmp_rec_hit.hit:
+                    closest_so_far[idx] = tmp_rec_hit.t
+                    rec[idx] = tmp_rec_hit
 
         return rec
+
 
 
 class Camera:
@@ -139,10 +141,11 @@ def ray_color(ray: Ray, world: Hittable, depth: int) -> np.ndarray:
     if depth <= 0:
         return newVector(0, 0, 0)
 
-    rec = world.hit(ray, 0, np.Infinity)
-    if rec.hit:
-        target = rec.p + rec.normal + randomVectorInUnitSphere()
-        return ray_color(Ray(rec.p, target - rec.p), world, depth - 1) * 0.5
+    recs = world.hit(ray, 0, np.Infinity)
+    for rec in recs:
+        if rec.hit:
+            target = rec.p + rec.normal + randomVectorInUnitSphere()
+            return ray_color(Ray(rec.p, target - rec.p), world, depth - 1) * 0.5
 
     unit_direction = ray.direction / np.linalg.norm(ray.direction)
     t = 0.5 * (unit_direction[1] + 1)
@@ -185,24 +188,24 @@ def main():
     screen.fill((0, 0, 0))
     pygame.display.flip()
 
-    for pixel in xy(WIDTH, HEIGHT):
-        pixel_color = np.array([0, 0, 0], dtype=float)
+    for i in range(SAMPLES_PER_PIXEL):
+        # pixel_color = np.array([0, 0, 0], dtype=float)
         us = []
         vs = []
-        for _ in range(SAMPLES_PER_PIXEL):
+        for pixel in xy(WIDTH, HEIGHT):
             u, v = uv(*pixel, WIDTH, HEIGHT)
             us.append([u])
             vs.append([v])
 
-    r = cam.get_ray(np.array(us), np.array(vs))
+        r = cam.get_ray(np.array(us), np.array(vs))
 
-    pixel_color += ray_color(r, world, MAX_DEPTH)
-    pixel_color = correct_color(pixel_color)
+        pixel_color = ray_color(r, world, MAX_DEPTH)
+        pixel_color = correct_color(pixel_color)
 
-    screen.set_at((WIDTH - pixel[0], HEIGHT - pixel[1]), (pixel_color * 255).tolist())
+        screen.set_at((WIDTH - pixel[0], HEIGHT - pixel[1]), (pixel_color * 255).tolist())
 
-    if pixel[1] % LINE_SKIP == 0:
-        pygame.display.flip()
+        if pixel[1] % LINE_SKIP == 0:
+            pygame.display.flip()
 
     running = True
     while running:
