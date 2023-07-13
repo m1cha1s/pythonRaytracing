@@ -2,10 +2,11 @@ import numpy as np
 from random import random
 from typing import List, Tuple
 from vector import *
+from multiprocessing import Pool
 import pygame
 
-LINE_SKIP = 10
-MAX_DEPTH = 3
+
+MAX_DEPTH = 10
 
 # ASPECT_RATIO = 1/1
 ASPECT_RATIO = 16 / 9
@@ -13,7 +14,7 @@ ASPECT_RATIO = 16 / 9
 WIDTH = 400
 HEIGHT = int(WIDTH / ASPECT_RATIO)
 
-SAMPLES_PER_PIXEL = 10
+SAMPLES_PER_PIXEL = 100
 
 ORIGIN = np.array([0, 0, 0])
 
@@ -162,6 +163,19 @@ def uv(x: int, y: int, width: int, height: int) -> Tuple[float, float]:
     return u, v
 
 
+def getPixelColor(x: int, y: int, cam: Camera, world: HittableList) -> np.ndarray:
+    pixel_color = np.array([0, 0, 0], dtype=float)
+    for _ in range(SAMPLES_PER_PIXEL):
+        pixel_uv = uv(x, y, WIDTH, HEIGHT)
+        r = cam.get_ray(*pixel_uv)
+
+        pixel_color += ray_color(r, world, MAX_DEPTH)
+    return correct_color(pixel_color)
+
+
+
+
+
 def main():
     # Pygame stuff
     pygame.init()
@@ -179,19 +193,19 @@ def main():
     screen.fill((0, 0, 0))
     pygame.display.flip()
 
-    for pixel in xy(WIDTH, HEIGHT):
-        pixel_color = np.array([0, 0, 0], dtype=float)
-        for _ in range(SAMPLES_PER_PIXEL):
-            pixel_uv = uv(*pixel, WIDTH, HEIGHT)
-            r = cam.get_ray(*pixel_uv)
+    pixels = [(*p, cam, world) for p in xy(WIDTH, HEIGHT)]
 
-            pixel_color += ray_color(r, world, MAX_DEPTH)
-        pixel_color = correct_color(pixel_color)
+    pixel_colors = []
 
+    with Pool() as pool:
+        pixel_colors = pool.starmap(getPixelColor, pixels)
+
+    for pixel_idx in range(len(pixel_colors)):
+        pixel_color = pixel_colors[pixel_idx]
+        pixel = pixels[pixel_idx]
         screen.set_at((WIDTH - pixel[0], HEIGHT - pixel[1]), (pixel_color * 255).tolist())
 
-        if pixel[1] % LINE_SKIP == 0:
-            pygame.display.flip()
+    pygame.display.flip()
 
     running = True
     while running:
