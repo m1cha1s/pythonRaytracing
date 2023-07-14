@@ -4,7 +4,9 @@ from typing import List, Tuple
 from vector import *
 from multiprocessing import Pool
 import pygame
+import ray
 
+ray.init()
 
 MAX_DEPTH = 10
 
@@ -154,7 +156,7 @@ def correct_color(color: np.ndarray) -> np.ndarray:
 def xy(width: int, height: int) -> Tuple[int, int]:
     for y in range(height):
         for x in range(width):
-            yield x, y
+            yield (x, y)
 
 
 def uv(x: int, y: int, width: int, height: int) -> Tuple[float, float]:
@@ -163,17 +165,15 @@ def uv(x: int, y: int, width: int, height: int) -> Tuple[float, float]:
     return u, v
 
 
-def getPixelColor(x: int, y: int, cam: Camera, world: HittableList) -> np.ndarray:
+@ray.remote
+def getPixelColor(x: int, y: int, cam: Camera, world: HittableList) -> Tuple[int, int, np.ndarray]:
     pixel_color = np.array([0, 0, 0], dtype=float)
     for _ in range(SAMPLES_PER_PIXEL):
         pixel_uv = uv(x, y, WIDTH, HEIGHT)
         r = cam.get_ray(*pixel_uv)
 
         pixel_color += ray_color(r, world, MAX_DEPTH)
-    return correct_color(pixel_color)
-
-
-
+    return x, y, correct_color(pixel_color)
 
 
 def main():
@@ -193,16 +193,12 @@ def main():
     screen.fill((0, 0, 0))
     pygame.display.flip()
 
-    pixels = [(*p, cam, world) for p in xy(WIDTH, HEIGHT)]
+    future_pixels = [getPixelColor.remote(p[0], p[1], cam, world) for p in xy(WIDTH, HEIGHT)]
 
-    pixel_colors = []
+    pixel_colors = ray.get(future_pixels)
 
-    with Pool() as pool:
-        pixel_colors = pool.starmap(getPixelColor, pixels)
-
-    for pixel_idx in range(len(pixel_colors)):
-        pixel_color = pixel_colors[pixel_idx]
-        pixel = pixels[pixel_idx]
+    for pixel in pixel_colors:
+        pixel_color = pixel[2]
         screen.set_at((WIDTH - pixel[0], HEIGHT - pixel[1]), (pixel_color * 255).tolist())
 
     pygame.display.flip()
